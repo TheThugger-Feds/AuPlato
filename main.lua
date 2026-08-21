@@ -1,5 +1,6 @@
--- Fetch and initialize WindUI
-local WindUI = loadstring(game:HttpGet("https://tree-hub.vercel.app/api/UI/WindUI"))()
+
+-- Fetch and initialize WindUI directly from raw source
+local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
 
 -- Create the Main Window
 local Window = WindUI:CreateWindow({
@@ -12,7 +13,7 @@ local Window = WindUI:CreateWindow({
     Theme = "Dark"
 })
 
--- Create Requested Tabs
+-- Create Tabs
 local AutoFarmTab = Window:Tab({ Title = "Auto Farm", Icon = "coins" })
 local AirdropTab  = Window:Tab({ Title = "Airdrop Farm", Icon = "box" })
 local ArrestTab   = Window:Tab({ Title = "Auto Arrest", Icon = "shield-alert" })
@@ -30,7 +31,7 @@ AutoFarmTab:Toggle({
     Callback = function(Value)
         _G.AutoFarmEnabled = Value
         if Value then
-            -- Insert Auto Farm loop here
+            -- Insert Auto Farm loop logic here
         end
     end
 })
@@ -47,7 +48,7 @@ AirdropTab:Toggle({
     Callback = function(Value)
         _G.AirdropFarmEnabled = Value
         if Value then
-            -- Insert Airdrop detection loop here
+            -- Insert Airdrop detection loop logic here
         end
     end
 })
@@ -64,7 +65,7 @@ ArrestTab:Toggle({
     Callback = function(Value)
         _G.AutoArrestEnabled = Value
         if Value then
-            -- Insert arrest target loop here
+            -- Insert arrest target loop logic here
         end
     end
 })
@@ -92,10 +93,9 @@ PlayerTab:Slider({
     Value = { Min = 50, Max = 200, Default = 50 },
     Callback = function(Value)
         local LocalPlayer = game.Players.LocalPlayer
-        if LocalPlayer and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") me
+        if LocalPlayer and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
             LocalPlayer.Character.Humanoid.UseJumpPower = true
             LocalPlayer.Character.Humanoid.JumpPower = Value
         end
     end
 })
-
