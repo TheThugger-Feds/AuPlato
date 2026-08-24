@@ -9,24 +9,67 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 local SpawnRemote = ReplicatedStorage:FindFirstChild("GarageSpawnVehicle", true)
 
-local FLY_HEIGHT = 300
-local SPEED = 110
-local SCAN_INTERVAL = 2
-local UNDERGROUND_OFFSET = Vector3.new(0, -10, 0)
-local SERVER_HOP_TIMEOUT = 120 -- Server hop after 2 minutes of no briefcases
+-- Initialize config if not already present
+if not _G.AuPlatoConfig then
+    _G.AuPlatoConfig = {
+        FlyHeight = 300,
+        AirdropSpeed = 110,
+        ScanInterval = 2,
+        UndergroundOffset = 10,
+        ServerHopTimeout = 120,
+        ActionWait = 0.5,
+        CarWaitBeforeExit = 2.5,
+        PreWalkWait = 1.0,
+        TweenEasing = "Linear",
+        ServerHopOnTimeout = true,
+    }
+end
 
-local ACTION_WAIT = 0.5
-local CAR_WAIT_BEFORE_EXIT = 2.5
-local PRE_WALK_WAIT = 1.0
+local FLY_HEIGHT = _G.AuPlatoConfig.FlyHeight or 300
+local SPEED = _G.AuPlatoConfig.AirdropSpeed or 110
+local SCAN_INTERVAL = _G.AuPlatoConfig.ScanInterval or 2
+local UNDERGROUND_OFFSET = Vector3.new(0, -(_G.AuPlatoConfig.UndergroundOffset or 10), 0)
+local SERVER_HOP_TIMEOUT = _G.AuPlatoConfig.ServerHopTimeout or 120
+local ACTION_WAIT = _G.AuPlatoConfig.ActionWait or 0.5
+local CAR_WAIT_BEFORE_EXIT = _G.AuPlatoConfig.CarWaitBeforeExit or 2.5
+local PRE_WALK_WAIT = _G.AuPlatoConfig.PreWalkWait or 1.0
+local TWEEN_EASING = _G.AuPlatoConfig.TweenEasing or "Linear"
 
 local isRunning = false
 local lastBriefcaseFoundTime = os.time()
+local scriptActive = true
+
+--------------------------------------------------
+-- GET TWEEN EASING STYLE
+--------------------------------------------------
+local function getTweenEasing(style)
+    local easing_map = {
+        ["Linear"] = Enum.EasingStyle.Linear,
+        ["Quad"] = Enum.EasingStyle.Quad,
+        ["Cubic"] = Enum.EasingStyle.Cubic,
+        ["Quart"] = Enum.EasingStyle.Quart,
+        ["Quint"] = Enum.EasingStyle.Quint,
+        ["Sine"] = Enum.EasingStyle.Sine,
+        ["Expo"] = Enum.EasingStyle.Expo,
+        ["Circ"] = Enum.EasingStyle.Circ,
+        ["Elastic"] = Enum.EasingStyle.Elastic,
+        ["Back"] = Enum.EasingStyle.Back,
+        ["Bounce"] = Enum.EasingStyle.Bounce,
+    }
+    return easing_map[style] or Enum.EasingStyle.Linear
+end
 
 --------------------------------------------------
 -- SERVER HOPPER
 --------------------------------------------------
 local function serverHop()
-    print("[Briefcase Bot] No briefcases found in 2 minutes. Server hopping...")
+    if not (_G.ServerHopEnabled and _G.AuPlatoConfig.ServerHopOnTimeout) then
+        print("[Airdrop] Server hop disabled by config")
+        return
+    end
+    
+    print("[Airdrop] No briefcases found in " .. SERVER_HOP_TIMEOUT .. " seconds. Server hopping...")
+    scriptActive = false
     local placeId = game.PlaceId
     local serversUrl = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/0?sortOrder=Asc&limit=100"
     
@@ -38,6 +81,13 @@ local function serverHop()
         for _, server in ipairs(result.data) do
             if server.playing < server.maxPlayers and server.id ~= game.JobId then
                 TeleportService:TeleportToPlaceInstance(placeId, server.id, LocalPlayer)
+                
+                -- Auto-execute after server hop if enabled
+                if _G.AuPlatoConfig.AutoExecuteAfterServerHop then
+                    task.wait(5)
+                    print("[Airdrop] Auto-executing after server hop...")
+                    _G.AuPlatoConfig.AirdropFarmEnabled = true
+                end
                 return
             end
         end
@@ -62,7 +112,7 @@ local function safePivotTween(model, targetCFrame, duration)
         end
     end)
     
-    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear)
+    local tweenInfo = TweenInfo.new(duration, getTweenEasing(TWEEN_EASING), Enum.EasingDirection.InOut)
     local tween = TweenService:Create(cframeValue, tweenInfo, {Value = targetCFrame})
     tween:Play()
     tween.Completed:Wait()
@@ -73,7 +123,7 @@ end
 
 local function safePartTween(part, targetCFrame, duration)
     if not part or not part:IsA("BasePart") then return end
-    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear)
+    local tweenInfo = TweenInfo.new(duration, getTweenEasing(TWEEN_EASING), Enum.EasingDirection.InOut)
     local tween = TweenService:Create(part, tweenInfo, {CFrame = targetCFrame})
     tween:Play()
     tween.Completed:Wait()
@@ -110,7 +160,7 @@ local function getNearbyVehicle(maxDistance)
 end
 
 local function spawnVehicleSpam()
-    print("[Briefcase Bot] Requesting vehicle spawn...")
+    print("[Airdrop] Requesting vehicle spawn...")
     local retries = 0
     while retries < 10 do
         if SpawnRemote then
@@ -121,11 +171,11 @@ local function spawnVehicleSpam()
         task.wait(1)
         local car = getMyVehicle()
         if car then
-            print("[Briefcase Bot] Vehicle successfully spawned!")
+            print("[Airdrop] Vehicle successfully spawned!")
             return car
         end
         retries = retries + 1
-        print("[Briefcase Bot] Spawn on cooldown... Retrying (" .. retries .. "/10)...")
+        print("[Airdrop] Spawn on cooldown... Retrying (" .. retries .. "/10)...")
     end
     return nil
 end
@@ -185,8 +235,10 @@ end
 -- MAIN PIPELINE
 --------------------------------------------------
 local function executeBriefcaseRun(targetCrate)
+    if not scriptActive then return end
+    
     isRunning = true
-    print("[Briefcase Bot] Briefcase targeted! Executing pipeline...")
+    print("[Airdrop] Briefcase targeted! Executing pipeline...")
     
     local char = LocalPlayer.Character
     if not char then 
@@ -229,29 +281,30 @@ local function executeBriefcaseRun(targetCrate)
         local airCrate = CFrame.new(cratePos.X, FLY_HEIGHT, cratePos.Z) * startPivot.Rotation
         local groundTarget = CFrame.new(cratePos + Vector3.new(0, 3, 0)) * startPivot.Rotation
 
-        print("[Briefcase Bot] Flying up...")
+        print("[Airdrop] Flying up...")
         safePivotTween(car, airStart, 1.2)
         task.wait(ACTION_WAIT)
 
-        print("[Briefcase Bot] Flying to target...")
+        print("[Airdrop] Flying to target...")
         local dist = (airStart.Position - airCrate.Position).Magnitude
-        safePivotTween(car, airCrate, math.max(dist / SPEED, 0.5))
+        local flightTime = math.max(dist / SPEED, 0.5)
+        safePivotTween(car, airCrate, flightTime)
         task.wait(ACTION_WAIT)
 
-        print("[Briefcase Bot] Descending...")
+        print("[Airdrop] Descending...")
         safePivotTween(car, groundTarget, 1.5)
         
-        print("[Briefcase Bot] Waiting before exiting vehicle...")
+        print("[Airdrop] Waiting before exiting vehicle...")
         task.wait(CAR_WAIT_BEFORE_EXIT)
 
         hum.Sit = false
         task.wait(0.5)
     end
 
-    print("[Briefcase Bot] Waiting before moving to airdrop...")
+    print("[Airdrop] Waiting before moving to airdrop...")
     task.wait(PRE_WALK_WAIT)
 
-    -- 3. Underground Positioning (-10 Studs)
+    -- 3. Underground Positioning
     for _, part in ipairs(char:GetDescendants()) do
         if part:IsA("BasePart") then
             part.CanCollide = false
@@ -271,13 +324,13 @@ local function executeBriefcaseRun(targetCrate)
     local openDuration = targetCrate:GetAttribute("BriefcaseOpenTiming") or 4.0
     
     if pressRemote and collectRemote then
-        print("[Briefcase Bot] Robbing briefcase underground...")
+        print("[Airdrop] Robbing briefcase underground...")
         pcall(function() pressRemote:FireServer(false) end)
         task.wait(ACTION_WAIT)
         
         local holding = true
         task.spawn(function()
-            while holding do
+            while holding and scriptActive do
                 if holdUpdateRemote then
                     pcall(function() holdUpdateRemote:FireServer() end)
                 end
@@ -312,22 +365,26 @@ local function executeBriefcaseRun(targetCrate)
     task.wait(ACTION_WAIT)
     local returnCar = getMyVehicle()
     if returnCar then
-        print("[Briefcase Bot] Re-entering car...")
+        print("[Airdrop] Re-entering car...")
         enterVehicle(returnCar)
     end
     
-    print("[Briefcase Bot] Sequence complete!")
+    print("[Airdrop] Sequence complete!")
     isRunning = false
-    lastBriefcaseFoundTime = os.time() -- Reset idle timer after execution
+    lastBriefcaseFoundTime = os.time()
 end
 
 --------------------------------------------------
 -- SCANNER LOOP
 --------------------------------------------------
 task.spawn(function()
-    print("[Briefcase Bot] Scanner initialized!")
-    while task.wait(SCAN_INTERVAL) do
-        if not isRunning then
+    print("[Airdrop] Scanner initialized!")
+    while scriptActive and task.wait(SCAN_INTERVAL) do
+        -- Update config values in real-time
+        FLY_HEIGHT = _G.AuPlatoConfig.FlyHeight or 300
+        SPEED = _G.AuPlatoConfig.AirdropSpeed or 110
+        
+        if _G.AuPlatoConfig.AirdropFarmEnabled and not isRunning then
             local target = getActiveBriefcase()
             if target then
                 lastBriefcaseFoundTime = os.time()
@@ -337,12 +394,19 @@ task.spawn(function()
                     end)
                 end)
             else
-                -- Check if 2 minutes (120 seconds) have passed without finding a briefcase
+                -- Check if timeout has passed
                 if (os.time() - lastBriefcaseFoundTime) >= SERVER_HOP_TIMEOUT then
                     serverHop()
                     break
                 end
             end
+        elseif not _G.AuPlatoConfig.AirdropFarmEnabled then
+            print("[Airdrop] Farm disabled, stopping...")
+            scriptActive = false
+            break
         end
     end
+    print("[Airdrop] Scanner stopped")
 end)
+
+print("[Airdrop] Script loaded successfully!")
