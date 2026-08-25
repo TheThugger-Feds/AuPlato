@@ -47,6 +47,10 @@ _G.AuPlatoConfig = {
 _G.ServerHopEnabled = true
 _G.PlayerFlightEnabled = false
 
+-- State trackers for single-instance script initialization
+local airdropScriptLoaded = false
+local flightScriptLoaded = false
+
 -- Create Tabs
 local AutoFarmTab = Window:Tab({ Title = "Auto Farm", Icon = "coins" })
 local AirdropTab  = Window:Tab({ Title = "Airdrop Farm", Icon = "box" })
@@ -82,7 +86,12 @@ AirdropTab:Toggle({
         _G.AuPlatoConfig.AirdropFarmEnabled = Value
         if Value then
             print("[AuPlato] Airdrop Farm Enabled")
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/TheThugger-Feds/AuPlato/main/Airdrop"))()
+            if not airdropScriptLoaded then
+                airdropScriptLoaded = true
+                task.spawn(function()
+                    loadstring(game:HttpGet("https://raw.githubusercontent.com/TheThugger-Feds/AuPlato/refs/heads/main/Airdrop.lua"))()
+                end)
+            end
         else
             print("[AuPlato] Airdrop Farm Disabled")
         end
@@ -213,7 +222,12 @@ PlayerTab:Toggle({
         _G.AuPlatoConfig.PlayerFlightEnabled = Value
         if Value then
             print("[AuPlato] Flight Mode Enabled")
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/TheThugger-Feds/AuPlato/main/LocalPlayer"))()
+            if not flightScriptLoaded then
+                flightScriptLoaded = true
+                task.spawn(function()
+                    loadstring(game:HttpGet("https://raw.githubusercontent.com/TheThugger-Feds/AuPlato/main/LocalPlayer"))()
+                end)
+            end
         else
             print("[AuPlato] Flight Mode Disabled")
         end
@@ -339,3 +353,4 @@ SettingsTab:Button({
 
 print("[AuPlato] ✅ GUI Initialized Successfully!")
 print("[AuPlato] All scripts are connected through global config")
+
