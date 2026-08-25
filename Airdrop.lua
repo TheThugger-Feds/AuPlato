@@ -5,6 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CollectionService = game:GetService("CollectionService")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
 local SpawnRemote = ReplicatedStorage:FindFirstChild("GarageSpawnVehicle", true)
@@ -90,25 +91,47 @@ local function serverHop()
     TeleportService:Teleport(placeId, LocalPlayer)
 end
 
-local function safePivotTween(model, targetCFrame, duration)
-    if not model or not model:IsA("Model") then return end
-    
-    local cframeValue = Instance.new("CFrameValue")
-    cframeValue.Value = model:GetPivot()
-    
-    local conn = cframeValue.Changed:Connect(function(newCFrame)
-        if model and model.Parent then
-            model:PivotTo(newCFrame)
+--------------------------------------------------
+-- GAME REPLICATED FLIGHT UTILITY
+--------------------------------------------------
+local function flyPartToTarget(part, targetPosition, speed)
+    if not part or not part:IsA("BasePart") then return end
+
+    local reached = false
+    local connection
+
+    connection = RunService.Heartbeat:Connect(function(deltaTime)
+        if not part or not part.Parent then
+            if connection then connection:Disconnect() end
+            reached = true
+            return
+        end
+
+        local currentPos = part.Position
+        local direction = targetPosition - currentPos
+        local distance = direction.Magnitude
+
+        if distance <= (speed * deltaTime) then
+            -- Reached target destination
+            part.AssemblyLinearVelocity = Vector3.zero
+            part.AssemblyAngularVelocity = Vector3.zero
+            part.CFrame = CFrame.new(targetPosition, targetPosition + workspace.CurrentCamera.CFrame.LookVector)
+            if connection then connection:Disconnect() end
+            reached = true
+        else
+            local moveDir = direction.Unit
+            local nextPosition = currentPos + (moveDir * speed * deltaTime)
+            
+            -- Apply identical physics overrides to the game's fly command
+            part.AssemblyLinearVelocity = Vector3.zero
+            part.AssemblyAngularVelocity = Vector3.zero
+            part.CFrame = CFrame.new(nextPosition, nextPosition + workspace.CurrentCamera.CFrame.LookVector)
         end
     end)
-    
-    local tweenInfo = TweenInfo.new(duration, getTweenEasing(TWEEN_EASING), Enum.EasingDirection.InOut)
-    local tween = TweenService:Create(cframeValue, tweenInfo, {Value = targetCFrame})
-    tween:Play()
-    tween.Completed:Wait()
-    
-    conn:Disconnect()
-    cframeValue:Destroy()
+
+    while not reached and scriptActive do
+        task.wait()
+    end
 end
 
 local function safePartTween(part, targetCFrame, duration)
@@ -253,28 +276,28 @@ local function executeBriefcaseRun(targetCrate)
     local cratePos = cratePivot.Position
 
     if car and hum.SeatPart then
+        local primaryPart = car.PrimaryPart or car:FindFirstChildWhichIsA("BasePart", true)
+        
         for _, part in ipairs(car:GetDescendants()) do
             if part:IsA("BasePart") then
                 part.CanCollide = false
             end
         end
 
-        local startPivot = car:GetPivot()
-        local airStart = CFrame.new(startPivot.Position.X, FLY_HEIGHT, startPivot.Position.Z) * startPivot.Rotation
-        local airCrate = CFrame.new(cratePos.X, FLY_HEIGHT, cratePos.Z) * startPivot.Rotation
-        local groundTarget = CFrame.new(cratePos + Vector3.new(0, 3, 0)) * startPivot.Rotation
+        local startPos = primaryPart.Position
+        local airStart = Vector3.new(startPos.X, FLY_HEIGHT, startPos.Z)
+        local airCrate = Vector3.new(cratePos.X, FLY_HEIGHT, cratePos.Z)
+        local groundTarget = cratePos + Vector3.new(0, 3, 0)
 
         _G.AuPlatoConfig.AirdropStatus = "Flying to Airdrop..."
-        safePivotTween(car, airStart, 1.2)
+        flyPartToTarget(primaryPart, airStart, SPEED)
         task.wait(ACTION_WAIT)
 
-        local dist = (airStart.Position - airCrate.Position).Magnitude
-        local flightTime = math.max(dist / SPEED, 0.5)
-        safePivotTween(car, airCrate, flightTime)
+        flyPartToTarget(primaryPart, airCrate, SPEED)
         task.wait(ACTION_WAIT)
 
         _G.AuPlatoConfig.AirdropStatus = "Descending..."
-        safePivotTween(car, groundTarget, 1.5)
+        flyPartToTarget(primaryPart, groundTarget, SPEED / 2)
         
         task.wait(CAR_WAIT_BEFORE_EXIT)
         hum.Sit = false
@@ -383,3 +406,4 @@ task.spawn(function()
         end
     end
 end)
+
