@@ -18,6 +18,7 @@ local Window = WindUI:CreateWindow({
 _G.AuPlatoConfig = {
     -- Airdrop Settings
     AirdropFarmEnabled = false,
+    AirdropStatus = "Idle",
     FlyHeight = 300,
     AirdropSpeed = 110,
     ScanInterval = 2,
@@ -98,6 +99,22 @@ AutoFarmTab:Toggle({
 -- ====================================================================
 -- 2. AIRDROP FARM TAB
 -- ====================================================================
+AirdropTab:Section({ Title = "Live Status" })
+
+local AirdropStatusParagraph = AirdropTab:Paragraph({
+    Title = "Current Status",
+    Desc = "Status: Idle"
+})
+
+-- Update Airdrop status text continuously in UI
+task.spawn(function()
+    while task.wait(0.5) do
+        if AirdropStatusParagraph then
+            AirdropStatusParagraph:SetDesc("Status: " .. tostring(_G.AuPlatoConfig.AirdropStatus))
+        end
+    end
+end)
+
 AirdropTab:Section({ Title = "Airdrop Collection" })
 
 AirdropTab:Toggle({
@@ -106,11 +123,16 @@ AirdropTab:Toggle({
     Value = false,
     Callback = function(Value)
         _G.AuPlatoConfig.AirdropFarmEnabled = Value
-        if Value and not airdropScriptLoaded then
-            airdropScriptLoaded = true
-            task.spawn(function()
-                loadstring(game:HttpGet("https://raw.githubusercontent.com/TheThugger-Feds/AuPlato/refs/heads/main/Airdrop.lua"))()
-            end)
+        if Value then
+            _G.AuPlatoConfig.AirdropStatus = "Scanning for Airdrops..."
+            if not airdropScriptLoaded then
+                airdropScriptLoaded = true
+                task.spawn(function()
+                    loadstring(game:HttpGet("https://raw.githubusercontent.com/TheThugger-Feds/AuPlato/refs/heads/main/Airdrop.lua"))()
+                end)
+            end
+        else
+            _G.AuPlatoConfig.AirdropStatus = "Idle"
         end
     end
 })
@@ -129,6 +151,61 @@ AirdropTab:Slider({
     Step = 5,
     Value = { Min = 50, Max = 200, Default = 110 },
     Callback = function(Value) _G.AuPlatoConfig.AirdropSpeed = Value end
+})
+
+AirdropTab:Section({ Title = "Scan & Timing" })
+
+AirdropTab:Slider({
+    Title = "Scan Interval (seconds)",
+    Step = 0.5,
+    Value = { Min = 0.5, Max = 5, Default = 2 },
+    Callback = function(Value) _G.AuPlatoConfig.ScanInterval = Value end
+})
+
+AirdropTab:Slider({
+    Title = "Underground Offset (studs)",
+    Step = 1,
+    Value = { Min = 1, Max = 20, Default = 10 },
+    Callback = function(Value) _G.AuPlatoConfig.UndergroundOffset = Value end
+})
+
+AirdropTab:Slider({
+    Title = "Server Hop Timeout (seconds)",
+    Step = 10,
+    Value = { Min = 30, Max = 300, Default = 120 },
+    Callback = function(Value) _G.AuPlatoConfig.ServerHopTimeout = Value end
+})
+
+AirdropTab:Slider({
+    Title = "Action Wait Delay (seconds)",
+    Step = 0.1,
+    Value = { Min = 0.1, Max = 2, Default = 0.5 },
+    Callback = function(Value) _G.AuPlatoConfig.ActionWait = Value end
+})
+
+AirdropTab:Slider({
+    Title = "Car Exit Wait (seconds)",
+    Step = 0.1,
+    Value = { Min = 0.5, Max = 5, Default = 2.5 },
+    Callback = function(Value) _G.AuPlatoConfig.CarWaitBeforeExit = Value end
+})
+
+AirdropTab:Slider({
+    Title = "Pre-Walk Wait (seconds)",
+    Step = 0.1,
+    Value = { Min = 0.1, Max = 3, Default = 1.0 },
+    Callback = function(Value) _G.AuPlatoConfig.PreWalkWait = Value end
+})
+
+AirdropTab:Section({ Title = "Airdrop Behavior" })
+
+AirdropTab:Toggle({
+    Title = "Server Hop on Timeout",
+    Desc = "Automatically server hop if no airdrops found",
+    Value = true,
+    Callback = function(Value)
+        _G.AuPlatoConfig.ServerHopOnTimeout = Value
+    end
 })
 
 -- ====================================================================
@@ -256,7 +333,7 @@ EspTab:Toggle({
 
 EspTab:Toggle({
     Title = "Show Health Bars",
-    Desc = "Display health status bar next to target",
+    Desc = "Display scaled health status bar next to target",
     Value = true,
     Callback = function(Value)
         _G.AuPlatoConfig.ShowHealth = Value
@@ -309,5 +386,5 @@ SettingsTab:Toggle({
     Callback = function(Value) _G.ServerHopEnabled = Value end
 })
 
-print("[AuPlato] ✅ GUI Initialized with ESP Tab!")
+print("[AuPlato] ✅ GUI Initialized with Realtime Status Text!")
 
