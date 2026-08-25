@@ -11,8 +11,6 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
-local scriptActive = true
-local flightActive = false
 
 -- Flight configuration
 local Acceleration = 2
@@ -27,7 +25,7 @@ local humanoid = nil
 local velocity = Vector3.new(0, 0, 0)
 local direction = Vector3.new(0, 0, 0)
 
--- Initialize config if not already present
+-- Initialize config fallback if not present
 if not _G.AuPlatoConfig then
     _G.AuPlatoConfig = {
         PlayerFlightEnabled = false,
@@ -63,7 +61,6 @@ local function startFlight()
     if not setupCharacter() then return end
     
     flying = true
-    flightActive = true
     print("[LocalPlayer] Flight Mode Activated")
     
     -- Disable default humanoid physics
@@ -78,33 +75,31 @@ local function startFlight()
 end
 
 local function stopFlight()
-    if not character or not humanoidRootPart or not humanoid then return end
-    
     flying = false
-    flightActive = false
     print("[LocalPlayer] Flight Mode Deactivated")
     
-    -- Re-enable humanoid physics
-    humanoid.PlatformStand = false
-    
-    -- Re-enable character collision
-    for _, part in ipairs(character:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.CanCollide = true
+    if setupCharacter() then
+        -- Re-enable humanoid physics
+        humanoid.PlatformStand = false
+        
+        -- Re-enable character collision
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = true
+            end
         end
     end
     
-    -- Let gravity take over
+    -- Reset velocity vectors
     velocity = Vector3.new(0, 0, 0)
+    direction = Vector3.new(0, 0, 0)
 end
 
-local function updateFlight()
+local function updateFlight(deltaTime)
     if not flying or not setupCharacter() then return end
     
     -- Update flight speed from global config
     local FlightSpeed = _G.AuPlatoConfig.FlightSpeed or 50
-    
-    local moveDirection = Vector3.new(0, 0, 0)
     
     -- Get input direction
     local moveZ = 0
@@ -118,23 +113,26 @@ local function updateFlight()
     if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveY = moveY + 1 end
     if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then moveY = moveY - 1 end
     
-    -- Normalize input
-    local inputDir = Vector3.new(moveX, moveY, moveZ).Unit
-    if inputDir.Magnitude == 0 then
-        inputDir = Vector3.new(0, 0, 0)
+    local inputDir = Vector3.new(moveX, moveY, moveZ)
+    if inputDir.Magnitude > 0 then
+        inputDir = inputDir.Unit
     end
     
-    -- Apply camera-relative movement
+    -- Calculate relative direction based on camera
     local camera = workspace.CurrentCamera
     local cameraCFrame = camera.CFrame
     
-    -- Calculate relative direction based on camera
     local rightVec = cameraCFrame.RightVector
     local upVec = Vector3.new(0, 1, 0)
     local lookVec = cameraCFrame.LookVector * Vector3.new(1, 0, 1)
-    lookVec = lookVec.Unit
     
-    moveDirection = (rightVec * inputDir.X + upVec * inputDir.Y + lookVec * inputDir.Z)
+    if lookVec.Magnitude > 0 then
+        lookVec = lookVec.Unit
+    else
+        lookVec = cameraCFrame.LookVector
+    end
+    
+    local moveDirection = (rightVec * inputDir.X + upVec * inputDir.Y + lookVec * inputDir.Z)
     
     -- Smooth acceleration/deceleration
     if moveDirection.Magnitude > 0 then
@@ -150,26 +148,14 @@ local function updateFlight()
         velocity = velocity.Unit * MaxSpeed
     end
     
-    -- Apply gravity resistance (not complete anti-gravity, more realistic)
+    -- Apply slight gravity resistance when idle
     if not UserInputService:IsKeyDown(Enum.KeyCode.Space) and not UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
         velocity = velocity - Vector3.new(0, Gravity, 0)
     end
     
-    -- Update position
-    local newCFrame = humanoidRootPart.CFrame + velocity * 0.016 -- deltaTime approximation
-    humanoidRootPart.CFrame = newCFrame
-end
-
-local function handleCharacterRespawn()
-    local conn
-    conn = LocalPlayer.CharacterAdded:Connect(function()
-        if flying then
-            task.wait(0.5)
-            if _G.AuPlatoConfig.PlayerFlightEnabled and setupCharacter() then
-                startFlight()
-            end
-        end
-    end)
+    -- Update position cleanly using deltaTime
+    local step = (deltaTime and deltaTime > 0) and deltaTime or 0.016
+    humanoidRootPart.CFrame = humanoidRootPart.CFrame + velocity * step
 end
 
 --------------------------------------------------
@@ -190,24 +176,23 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 end)
 
 --------------------------------------------------
--- MAIN LOOP
+-- MAIN LOOP & RESPONSIVE STATE MONITOR
 --------------------------------------------------
-local flightConnection
-flightConnection = RunService.RenderStepped:Connect(function()
-    -- Check if flight should be active
-    if _G.AuPlatoConfig.PlayerFlightEnabled and not flying and scriptActive then
+RunService.RenderStepped:Connect(function(deltaTime)
+    -- Start or stop flight dynamically based on UI Toggle state
+    if _G.AuPlatoConfig.PlayerFlightEnabled and not flying then
         startFlight()
     elseif not _G.AuPlatoConfig.PlayerFlightEnabled and flying then
         stopFlight()
     end
     
     if flying then
-        updateFlight()
+        updateFlight(deltaTime)
     end
 end)
 
 --------------------------------------------------
--- CLEANUP
+-- RESPAWN HANDLER
 --------------------------------------------------
 LocalPlayer.CharacterAdded:Connect(function()
     if flying then
@@ -219,22 +204,5 @@ LocalPlayer.CharacterAdded:Connect(function()
     end
 end)
 
--- Clean up when script is disabled
-local checkConnection
-checkConnection = game:GetService("RunService").Heartbeat:Connect(function()
-    if not _G.AuPlatoConfig.PlayerFlightEnabled then
-        if flightActive then
-            stopFlight()
-        end
-        if checkConnection then
-            checkConnection:Disconnect()
-        end
-        if flightConnection then
-            flightConnection:Disconnect()
-        end
-        scriptActive = false
-    end
-end)
-
-print("[LocalPlayer] Flight script loaded! Press F to toggle flight")
-print("[LocalPlayer] W/A/S/D to move, Space/Ctrl for up/down")
+print("[LocalPlayer] Flight script loaded! Press F or toggle UI to flight mode")
+print("[LocalPlayer] Controls: W/A/S/D to move, Space/Ctrl for vertical elevation")
