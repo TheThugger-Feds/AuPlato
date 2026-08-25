@@ -9,7 +9,7 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 local SpawnRemote = ReplicatedStorage:FindFirstChild("GarageSpawnVehicle", true)
 
--- Initialize config if not already present
+-- Initialize config fallback if not present
 if not _G.AuPlatoConfig then
     _G.AuPlatoConfig = {
         FlyHeight = 300,
@@ -22,6 +22,7 @@ if not _G.AuPlatoConfig then
         PreWalkWait = 1.0,
         TweenEasing = "Linear",
         ServerHopOnTimeout = true,
+        AirdropFarmEnabled = false,
     }
 end
 
@@ -379,34 +380,41 @@ end
 --------------------------------------------------
 task.spawn(function()
     print("[Airdrop] Scanner initialized!")
-    while scriptActive and task.wait(SCAN_INTERVAL) do
-        -- Update config values in real-time
+    while scriptActive do
+        task.wait(SCAN_INTERVAL)
+        
+        -- Refresh dynamic config parameters from UI
         FLY_HEIGHT = _G.AuPlatoConfig.FlyHeight or 300
         SPEED = _G.AuPlatoConfig.AirdropSpeed or 110
+        SCAN_INTERVAL = _G.AuPlatoConfig.ScanInterval or 2
+        UNDERGROUND_OFFSET = Vector3.new(0, -(_G.AuPlatoConfig.UndergroundOffset or 10), 0)
+        SERVER_HOP_TIMEOUT = _G.AuPlatoConfig.ServerHopTimeout or 120
+        ACTION_WAIT = _G.AuPlatoConfig.ActionWait or 0.5
+        CAR_WAIT_BEFORE_EXIT = _G.AuPlatoConfig.CarWaitBeforeExit or 2.5
+        PRE_WALK_WAIT = _G.AuPlatoConfig.PreWalkWait or 1.0
+        TWEEN_EASING = _G.AuPlatoConfig.TweenEasing or "Linear"
         
         if _G.AuPlatoConfig.AirdropFarmEnabled and not isRunning then
             local target = getActiveBriefcase()
             if target then
                 lastBriefcaseFoundTime = os.time()
-                task.spawn(function()
-                    pcall(function()
-                        executeBriefcaseRun(target)
-                    end)
+                pcall(function()
+                    executeBriefcaseRun(target)
                 end)
             else
-                -- Check if timeout has passed
+                -- Check if timeout has passed while farm is enabled
                 if (os.time() - lastBriefcaseFoundTime) >= SERVER_HOP_TIMEOUT then
                     serverHop()
                     break
                 end
             end
-        elseif not _G.AuPlatoConfig.AirdropFarmEnabled then
-            print("[Airdrop] Farm disabled, stopping...")
-            scriptActive = false
-            break
+        else
+            -- Keep reset time synchronized when farm is off so server hopping does not immediately trigger upon turning it on
+            lastBriefcaseFoundTime = os.time()
         end
     end
     print("[Airdrop] Scanner stopped")
 end)
 
 print("[Airdrop] Script loaded successfully!")
+
