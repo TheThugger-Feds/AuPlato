@@ -45,7 +45,6 @@ _G.AuPlatoConfig = {
 
 -- Global flags
 _G.ServerHopEnabled = true
-_G.PlayerFlightEnabled = false
 
 -- State trackers for single-instance script initialization
 local airdropScriptLoaded = false
@@ -225,7 +224,7 @@ PlayerTab:Toggle({
             if not flightScriptLoaded then
                 flightScriptLoaded = true
                 task.spawn(function()
-                    loadstring(game:HttpGet("https://raw.githubusercontent.com/TheThugger-Feds/AuPlato/main/LocalPlayer"))()
+                    loadstring(game:HttpGet("https://raw.githubusercontent.com/TheThugger-Feds/AuPlato/refs/heads/main/LocalPlayer.lua"))()
                 end)
             end
         else
@@ -353,4 +352,3 @@ SettingsTab:Button({
 
 print("[AuPlato] ✅ GUI Initialized Successfully!")
 print("[AuPlato] All scripts are connected through global config")
-
