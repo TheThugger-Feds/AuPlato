@@ -1,9 +1,7 @@
 --[[
-    AuPlato Framework - Team & Visual ESP Module
-    - Supports Police, Criminal, and Prisoner teams
-    - Dynamic Highlights (Outlines & Fills)
-    - Billboard UI (Usernames, Distance, Health)
-    - Drawing API Snaplines / Tracers
+    AuPlato Framework - Dynamic Scaled ESP Module
+    - Fixed huge billboard/health bar screen takeover
+    - Uses 3D World space offset and StudsScale to match camera distance
 ]]--
 
 local Players = game:GetService("Players")
@@ -12,7 +10,6 @@ local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
--- Global configuration safety check
 if not _G.AuPlatoConfig then
     _G.AuPlatoConfig = {
         PoliceEspEnabled = false,
@@ -28,16 +25,12 @@ if not _G.AuPlatoConfig then
     }
 end
 
--- Container for ESP Elements
 local ESPFolder = Instance.new("Folder")
 ESPFolder.Name = "AuPlato_ESP_Container"
 ESPFolder.Parent = CoreGui
 
 local activeTrackers = {}
 
---------------------------------------------------
--- TEAM MATCHING HELPER
---------------------------------------------------
 local function getPlayerTeamCategory(player)
     if not player or not player.Team then return nil end
     local teamName = string.lower(player.Team.Name)
@@ -68,9 +61,6 @@ local function isEspActiveForPlayer(player)
     return false, nil
 end
 
---------------------------------------------------
--- ESP TRACKER CREATION
---------------------------------------------------
 local function createESPTracker(player)
     if activeTrackers[player] then return end
 
@@ -84,7 +74,7 @@ local function createESPTracker(player)
         TracerLine = nil
     }
 
-    -- 1. Create Character Highlight
+    -- Character Highlight
     local highlight = Instance.new("Highlight")
     highlight.Name = "AuPlato_HL_" .. player.Name
     highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
@@ -94,12 +84,14 @@ local function createESPTracker(player)
     highlight.Parent = ESPFolder
     tracker.Highlight = highlight
 
-    -- 2. Create Overhead Billboard GUI
+    -- Dynamically Scaled Overhead Billboard
     local billboard = Instance.new("BillboardGui")
     billboard.Name = "AuPlato_BB_" .. player.Name
-    billboard.Size = UDim2.new(0, 200, 0, 50)
-    billboard.StudsOffset = Vector3.new(0, 3.5, 0)
+    billboard.Size = UDim2.new(0, 120, 0, 40) -- Scaled down pixel baseline
+    billboard.StudsOffsetWorldSpace = Vector3.new(0, 3.5, 0)
     billboard.AlwaysOnTop = true
+    billboard.SizeOffset = Vector2.new(0, 0)
+    billboard.MaxDistance = 2500
     billboard.Enabled = false
     billboard.Parent = ESPFolder
     tracker.Billboard = billboard
@@ -111,16 +103,17 @@ local function createESPTracker(player)
     textLabel.TextStrokeTransparency = 0
     textLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
     textLabel.Font = Enum.Font.SourceSansBold
-    textLabel.TextSize = 14
+    textLabel.TextSize = 13
+    textLabel.TextScaled = false
     textLabel.Text = ""
     textLabel.Parent = billboard
     tracker.TextLabel = textLabel
 
-    -- 3. Create Health Bar
+    -- Scaled Health Bar
     local healthBg = Instance.new("Frame")
-    healthBg.Size = UDim2.new(0.6, 0, 0.1, 0)
-    healthBg.Position = UDim2.new(0.2, 0, 0.65, 0)
-    healthBg.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    healthBg.Size = UDim2.new(0.8, 0, 0.12, 0)
+    healthBg.Position = UDim2.new(0.1, 0, 0.7, 0)
+    healthBg.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
     healthBg.BorderSizePixel = 1
     healthBg.BorderColor3 = Color3.fromRGB(0, 0, 0)
     healthBg.Parent = billboard
@@ -133,7 +126,7 @@ local function createESPTracker(player)
     healthFill.Parent = healthBg
     tracker.HealthFill = healthFill
 
-    -- 4. Create Screen Tracer / Snapline (Using Drawing API)
+    -- Tracers
     if Drawing then
         local line = Drawing.new("Line")
         line.Thickness = 1.5
@@ -155,9 +148,6 @@ local function removeESPTracker(player)
     end
 end
 
---------------------------------------------------
--- RENDER LOOP (REAL-TIME UPDATES)
---------------------------------------------------
 RunService.RenderStepped:Connect(function()
     local localChar = LocalPlayer.Character
     local localHrp = localChar and localChar:FindFirstChild("HumanoidRootPart")
@@ -175,18 +165,27 @@ RunService.RenderStepped:Connect(function()
             tracker.Highlight.OutlineColor = teamColor
             tracker.Highlight.Enabled = true
 
-            -- Update Billboard Attachment
+            -- Distance calculation for visual scaling
+            local distance = localHrp and math.floor((localHrp.Position - targetHrp.Position).Magnitude) or 0
+            
+            -- Update Billboard Attachment & Position
             tracker.Billboard.Adornee = targetHrp
             tracker.Billboard.Enabled = true
 
-            -- Construct Text Info
+            -- Dynamically scale text size based on distance
+            if distance > 300 then
+                tracker.TextLabel.TextSize = 11
+            else
+                tracker.TextLabel.TextSize = 13
+            end
+
+            -- Construct Overhead Labels
             local displayText = ""
             if _G.AuPlatoConfig.ShowUsername then
                 displayText = player.DisplayName .. " (@" .. player.Name .. ")"
             end
 
             if localHrp and _G.AuPlatoConfig.ShowDistance then
-                local distance = math.floor((localHrp.Position - targetHrp.Position).Magnitude)
                 if displayText ~= "" then
                     displayText = displayText .. "\n[" .. tostring(distance) .. " studs]"
                 else
@@ -197,7 +196,7 @@ RunService.RenderStepped:Connect(function()
             tracker.TextLabel.Text = displayText
             tracker.TextLabel.TextColor3 = teamColor
 
-            -- Update Health Bar Visuals
+            -- Update Health Bar
             if _G.AuPlatoConfig.ShowHealth then
                 tracker.HealthBarFrame.Visible = true
                 local healthPercent = math.clamp(targetHum.Health / targetHum.MaxHealth, 0, 1)
@@ -207,7 +206,7 @@ RunService.RenderStepped:Connect(function()
                 tracker.HealthBarFrame.Visible = false
             end
 
-            -- Update Tracer Snaplines
+            -- Update Tracers
             if tracker.TracerLine then
                 if _G.AuPlatoConfig.ShowTracers then
                     local screenPos, onScreen = Camera:WorldToViewportPoint(targetHrp.Position)
@@ -224,7 +223,6 @@ RunService.RenderStepped:Connect(function()
                 end
             end
         else
-            -- Hide ESP elements when dead, invalid, or toggled off
             tracker.Highlight.Enabled = false
             tracker.Billboard.Enabled = false
             if tracker.TracerLine then
@@ -234,23 +232,15 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
---------------------------------------------------
--- PLAYER LISTENERS
---------------------------------------------------
 for _, player in ipairs(Players:GetPlayers()) do
-    if player ~= LocalPlayer then
-        createESPTracker(player)
-    end
+    if player ~= LocalPlayer then createESPTracker(player) end
 end
 
 Players.PlayerAdded:Connect(function(player)
-    if player ~= LocalPlayer then
-        createESPTracker(player)
-    end
+    if player ~= LocalPlayer then createESPTracker(player) end
 end)
 
 Players.PlayerRemoving:Connect(function(player)
     removeESPTracker(player)
 end)
 
-print("[AuPlato] ESP Module Active & Listening for Team Changes")
