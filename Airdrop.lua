@@ -23,6 +23,7 @@ if not _G.AuPlatoConfig then
         TweenEasing = "Linear",
         ServerHopOnTimeout = true,
         AirdropFarmEnabled = false,
+        AirdropStatus = "Idle",
     }
 end
 
@@ -40,9 +41,6 @@ local isRunning = false
 local lastBriefcaseFoundTime = os.time()
 local scriptActive = true
 
---------------------------------------------------
--- GET TWEEN EASING STYLE
---------------------------------------------------
 local function getTweenEasing(style)
     local easing_map = {
         ["Linear"] = Enum.EasingStyle.Linear,
@@ -60,16 +58,13 @@ local function getTweenEasing(style)
     return easing_map[style] or Enum.EasingStyle.Linear
 end
 
---------------------------------------------------
--- SERVER HOPPER
---------------------------------------------------
 local function serverHop()
     if not (_G.ServerHopEnabled and _G.AuPlatoConfig.ServerHopOnTimeout) then
-        print("[Airdrop] Server hop disabled by config")
+        _G.AuPlatoConfig.AirdropStatus = "Server hop disabled by config"
         return
     end
     
-    print("[Airdrop] No briefcases found in " .. SERVER_HOP_TIMEOUT .. " seconds. Server hopping...")
+    _G.AuPlatoConfig.AirdropStatus = "Server hopping..."
     scriptActive = false
     local placeId = game.PlaceId
     local serversUrl = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/0?sortOrder=Asc&limit=100"
@@ -83,10 +78,8 @@ local function serverHop()
             if server.playing < server.maxPlayers and server.id ~= game.JobId then
                 TeleportService:TeleportToPlaceInstance(placeId, server.id, LocalPlayer)
                 
-                -- Auto-execute after server hop if enabled
                 if _G.AuPlatoConfig.AutoExecuteAfterServerHop then
                     task.wait(5)
-                    print("[Airdrop] Auto-executing after server hop...")
                     _G.AuPlatoConfig.AirdropFarmEnabled = true
                 end
                 return
@@ -94,13 +87,9 @@ local function serverHop()
         end
     end
     
-    -- Fallback simple teleport if server list fetch fails
     TeleportService:Teleport(placeId, LocalPlayer)
 end
 
---------------------------------------------------
--- HELPER FUNCTIONS
---------------------------------------------------
 local function safePivotTween(model, targetCFrame, duration)
     if not model or not model:IsA("Model") then return end
     
@@ -161,7 +150,7 @@ local function getNearbyVehicle(maxDistance)
 end
 
 local function spawnVehicleSpam()
-    print("[Airdrop] Requesting vehicle spawn...")
+    _G.AuPlatoConfig.AirdropStatus = "Spawning vehicle..."
     local retries = 0
     while retries < 10 do
         if SpawnRemote then
@@ -172,11 +161,9 @@ local function spawnVehicleSpam()
         task.wait(1)
         local car = getMyVehicle()
         if car then
-            print("[Airdrop] Vehicle successfully spawned!")
             return car
         end
         retries = retries + 1
-        print("[Airdrop] Spawn on cooldown... Retrying (" .. retries .. "/10)...")
     end
     return nil
 end
@@ -232,14 +219,11 @@ local function enterVehicle(car)
     return false
 end
 
---------------------------------------------------
--- MAIN PIPELINE
---------------------------------------------------
 local function executeBriefcaseRun(targetCrate)
     if not scriptActive then return end
     
     isRunning = true
-    print("[Airdrop] Briefcase targeted! Executing pipeline...")
+    _G.AuPlatoConfig.AirdropStatus = "Target Found! Executing Run..."
     
     local char = LocalPlayer.Character
     if not char then 
@@ -254,7 +238,6 @@ local function executeBriefcaseRun(targetCrate)
         return 
     end
 
-    -- 1. Vehicle Distance & Spawn Check
     local car = getNearbyVehicle(30)
     if not car then
         car = spawnVehicleSpam()
@@ -269,7 +252,6 @@ local function executeBriefcaseRun(targetCrate)
     local cratePivot = targetCrate:GetPivot()
     local cratePos = cratePivot.Position
 
-    -- 2. Transit Phase
     if car and hum.SeatPart then
         for _, part in ipairs(car:GetDescendants()) do
             if part:IsA("BasePart") then
@@ -282,30 +264,25 @@ local function executeBriefcaseRun(targetCrate)
         local airCrate = CFrame.new(cratePos.X, FLY_HEIGHT, cratePos.Z) * startPivot.Rotation
         local groundTarget = CFrame.new(cratePos + Vector3.new(0, 3, 0)) * startPivot.Rotation
 
-        print("[Airdrop] Flying up...")
+        _G.AuPlatoConfig.AirdropStatus = "Flying to Airdrop..."
         safePivotTween(car, airStart, 1.2)
         task.wait(ACTION_WAIT)
 
-        print("[Airdrop] Flying to target...")
         local dist = (airStart.Position - airCrate.Position).Magnitude
         local flightTime = math.max(dist / SPEED, 0.5)
         safePivotTween(car, airCrate, flightTime)
         task.wait(ACTION_WAIT)
 
-        print("[Airdrop] Descending...")
+        _G.AuPlatoConfig.AirdropStatus = "Descending..."
         safePivotTween(car, groundTarget, 1.5)
         
-        print("[Airdrop] Waiting before exiting vehicle...")
         task.wait(CAR_WAIT_BEFORE_EXIT)
-
         hum.Sit = false
         task.wait(0.5)
     end
 
-    print("[Airdrop] Waiting before moving to airdrop...")
     task.wait(PRE_WALK_WAIT)
 
-    -- 3. Underground Positioning
     for _, part in ipairs(char:GetDescendants()) do
         if part:IsA("BasePart") then
             part.CanCollide = false
@@ -316,7 +293,6 @@ local function executeBriefcaseRun(targetCrate)
     safePartTween(hrp, safeUndergroundCFrame, 0.5)
     task.wait(ACTION_WAIT)
 
-    -- 4. Remote Interaction
     local pressRemote = targetCrate:FindFirstChild("BriefcasePress", true)
     local releaseRemote = targetCrate:FindFirstChild("BriefcaseRelease", true)
     local holdUpdateRemote = targetCrate:FindFirstChild("BriefcaseHoldUpdate", true)
@@ -325,7 +301,7 @@ local function executeBriefcaseRun(targetCrate)
     local openDuration = targetCrate:GetAttribute("BriefcaseOpenTiming") or 4.0
     
     if pressRemote and collectRemote then
-        print("[Airdrop] Robbing briefcase underground...")
+        _G.AuPlatoConfig.AirdropStatus = "Opening Briefcase Underground..."
         pcall(function() pressRemote:FireServer(false) end)
         task.wait(ACTION_WAIT)
         
@@ -351,7 +327,6 @@ local function executeBriefcaseRun(targetCrate)
         task.wait(ACTION_WAIT)
     end
 
-    -- 5. Return Above Ground
     local aboveGroundCFrame = CFrame.new(cratePos + Vector3.new(0, 3, 0))
     safePartTween(hrp, aboveGroundCFrame, 0.5)
     task.wait(ACTION_WAIT)
@@ -362,28 +337,21 @@ local function executeBriefcaseRun(targetCrate)
         end
     end
 
-    -- 6. Re-enter Vehicle
     task.wait(ACTION_WAIT)
     local returnCar = getMyVehicle()
     if returnCar then
-        print("[Airdrop] Re-entering car...")
         enterVehicle(returnCar)
     end
     
-    print("[Airdrop] Sequence complete!")
+    _G.AuPlatoConfig.AirdropStatus = "Airdrop Claimed! Resuming Scan..."
     isRunning = false
     lastBriefcaseFoundTime = os.time()
 end
 
---------------------------------------------------
--- SCANNER LOOP
---------------------------------------------------
 task.spawn(function()
-    print("[Airdrop] Scanner initialized!")
     while scriptActive do
         task.wait(SCAN_INTERVAL)
         
-        -- Refresh dynamic config parameters from UI
         FLY_HEIGHT = _G.AuPlatoConfig.FlyHeight or 300
         SPEED = _G.AuPlatoConfig.AirdropSpeed or 110
         SCAN_INTERVAL = _G.AuPlatoConfig.ScanInterval or 2
@@ -402,19 +370,16 @@ task.spawn(function()
                     executeBriefcaseRun(target)
                 end)
             else
-                -- Check if timeout has passed while farm is enabled
-                if (os.time() - lastBriefcaseFoundTime) >= SERVER_HOP_TIMEOUT then
+                local elapsed = os.time() - lastBriefcaseFoundTime
+                _G.AuPlatoConfig.AirdropStatus = "Scanning for Airdrops... (" .. tostring(SERVER_HOP_TIMEOUT - elapsed) .. "s to hop)"
+                if elapsed >= SERVER_HOP_TIMEOUT then
                     serverHop()
                     break
                 end
             end
-        else
-            -- Keep reset time synchronized when farm is off so server hopping does not immediately trigger upon turning it on
+        elseif not _G.AuPlatoConfig.AirdropFarmEnabled then
+            _G.AuPlatoConfig.AirdropStatus = "Idle"
             lastBriefcaseFoundTime = os.time()
         end
     end
-    print("[Airdrop] Scanner stopped")
 end)
-
-print("[Airdrop] Script loaded successfully!")
-
